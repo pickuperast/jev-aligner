@@ -46,6 +46,28 @@ func retryDir() string {
 	return filepath.Join(base, "jev", "hook")
 }
 
+// codexTranscript finds the current day's Codex rollout; Codex supplies its
+// session id but not Claude's transcript_path field.
+func codexTranscript(session string) string {
+	if _, ok := retryFile(session); !ok {
+		return ""
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	base := strings.TrimSpace(os.Getenv("CODEX_HOME"))
+	if base == "" {
+		base = filepath.Join(home, ".codex")
+	}
+	dir := filepath.Join(base, "sessions", time.Now().Format("2006"), time.Now().Format("01"), time.Now().Format("02"))
+	matches, _ := filepath.Glob(filepath.Join(dir, "rollout-*-"+session+".jsonl"))
+	if len(matches) == 0 {
+		return ""
+	}
+	return matches[0]
+}
+
 // retryFile maps a session id to its state file. The id comes from Claude Code
 // and is echoed back by the agent, so anything but a plain token is refused
 // rather than turned into a path.

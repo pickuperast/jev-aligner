@@ -29,11 +29,11 @@ That repository contains the string `register` **zero times**. The flow is calle
 
 ## Install
 
-Needs Go 1.22+ and an [OpenRouter](https://openrouter.ai) API key. This fork
+Needs Go 1.26.1+ and either a `TYPESAFE_API_KEY` or an [OpenRouter](https://openrouter.ai) API key. This fork
 calls Jev through OpenRouter's decisions endpoint
 (`https://openrouter.ai/api/alpha/decisions`), which takes the same request as
-TypeSafe's own API. Set `JEV_BASE_URL=https://api.typesafe.ai/v1/systemone`
-and `TYPE_SAFE_AI_KEY` to go to TypeSafe directly instead.
+TypeSafe's own API. `TYPESAFE_API_KEY` selects TypeSafe directly; `JEV_BASE_URL`
+can override either endpoint.
 
 `bin/` is not committed, so build before installing — the install copies the
 plugin, binary included, into Claude Code's cache:
@@ -46,11 +46,17 @@ claude plugin install jev@jev
 ```
 
 Then, once, give Claude Code the key (shell profile, or the `env` block of
-`~/.claude/settings.json`):
+`~/.claude/settings.json`). On Windows, set `TYPESAFE_API_KEY` as a User
+environment variable and restart Codex:
 
 ```bash
-export OPENROUTER_API_KEY=...   # JEV_TOKEN is accepted too
+export TYPESAFE_API_KEY=...
 ```
+
+To install the Read hook for Codex from this checkout, run `.\install-codex.ps1`
+in PowerShell. It builds `jev.exe` under `%USERPROFILE%\.codex\plugins\jev`,
+adds the hook to `%USERPROFILE%\.codex\hooks.json`, and preserves other hooks.
+Restart Codex and approve the hook when prompted.
 
 After a rebuild, `make sync` pushes the new binary into the installed copy.
 

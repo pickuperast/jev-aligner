@@ -37,6 +37,7 @@ type hookInput struct {
 	CWD            string         `json:"cwd"`
 	TranscriptPath string         `json:"transcript_path"`
 	SessionID      string         `json:"session_id"`
+	CodexSessionID string         `json:"sessionId"`
 }
 
 type hookOutput struct {
@@ -104,11 +105,17 @@ func Hook(args []string) error {
 	if err := json.NewDecoder(os.Stdin).Decode(&in); err != nil {
 		return passThrough("unreadable payload")
 	}
-	if in.ToolName != "Read" {
+	if in.SessionID == "" {
+		in.SessionID = in.CodexSessionID
+	}
+	if in.ToolName != "Read" && in.ToolName != "read_file" {
 		return passThrough("not a Read")
 	}
 
 	path, _ := in.ToolInput["file_path"].(string)
+	if path == "" {
+		path, _ = in.ToolInput["path"].(string)
+	}
 	if path == "" {
 		return passThrough("no file_path")
 	}
@@ -116,8 +123,14 @@ func Hook(args []string) error {
 	if _, ok := in.ToolInput["offset"]; ok {
 		return passThrough("agent set an offset")
 	}
+	if _, ok := in.ToolInput["start_line"]; ok {
+		return passThrough("agent set a start_line")
+	}
 	if _, ok := in.ToolInput["limit"]; ok {
 		return passThrough("agent set a limit")
+	}
+	if _, ok := in.ToolInput["end_line"]; ok {
+		return passThrough("agent set an end_line")
 	}
 
 	data, err := os.ReadFile(path)
@@ -145,9 +158,13 @@ func Hook(args []string) error {
 	abs := resolvePath(path, in.CWD)
 	retries := loadRetry(in.SessionID)
 	entry, retrying := retries[abs]
+	transcript := in.TranscriptPath
+	if transcript == "" {
+		transcript = codexTranscript(in.SessionID)
+	}
 	goal := entry.Goal
 	if goal == "" {
-		goal = lastUserMessage(in.TranscriptPath)
+		goal = lastUserMessage(transcript)
 	}
 	if len(goal) < 12 {
 		return passThrough("no goal found in the transcript")
@@ -209,14 +226,24 @@ func Hook(args []string) error {
 		offset = lines - window
 	}
 
+	updatedInput := make(map[string]any, len(in.ToolInput)+2)
+	for key, value := range in.ToolInput {
+		updatedInput[key] = value
+	}
+	lineStart, lineEnd := "offset", "limit"
+	if _, ok := in.ToolInput["path"]; ok {
+		lineStart, lineEnd = "start_line", "end_line"
+	}
+	updatedInput[lineStart] = offset
+	if lineEnd == "limit" {
+		updatedInput[lineEnd] = window
+	} else {
+		updatedInput[lineEnd] = offset + window - 1
+	}
 	return json.NewEncoder(os.Stdout).Encode(hookOutput{
 		HookSpecificOutput: &hookSpecific{
 			HookEventName: "PreToolUse",
-			UpdatedInput: map[string]any{
-				"file_path": path,
-				"offset":    offset,
-				"limit":     window,
-			},
+			UpdatedInput:  updatedInput,
 			AdditionalContext: fmt.Sprintf(
 				"jev narrowed this Read: %s is %d lines, showing %d-%d (match at line %d, confidence %.2f). "+
 					"Read it again with an explicit offset or limit to see any other part — nothing was removed from the file.",
@@ -249,11 +276,25 @@ func lastUserMessage(transcript string) string {
 				Role    string `json:"role"`
 				Content any    `json:"content"`
 			} `json:"message"`
+			Payload struct {
+				Type    string `json:"type"`
+				Role    string `json:"role"`
+				Content any    `json:"content"`
+			} `json:"payload"`
 		}
-		if json.Unmarshal(sc.Bytes(), &o) != nil || o.Type != "user" {
+		if json.Unmarshal(sc.Bytes(), &o) != nil {
 			continue
 		}
-		switch c := o.Message.Content.(type) {
+		role, content := o.Message.Role, o.Message.Content
+		if o.Type == "response_item" && o.Payload.Type == "message" {
+			role, content = o.Payload.Role, o.Payload.Content
+		} else if o.Type != "user" {
+			continue
+		}
+		if role != "user" {
+			continue
+		}
+		switch c := content.(type) {
 		case string:
 			if t := strings.TrimSpace(c); t != "" {
 				last = t
@@ -262,7 +303,7 @@ func lastUserMessage(transcript string) string {
 			var b strings.Builder
 			for _, raw := range c {
 				m, ok := raw.(map[string]any)
-				if !ok || m["type"] != "text" {
+				if !ok || (m["type"] != "text" && m["type"] != "input_text") {
 					continue // a tool_result is not the user speaking
 				}
 				if t, ok := m["text"].(string); ok {

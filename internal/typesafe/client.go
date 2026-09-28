@@ -34,6 +34,9 @@ func Endpoint() string {
 	if v := strings.TrimSpace(os.Getenv("JEV_BASE_URL")); v != "" {
 		return v
 	}
+	if strings.TrimSpace(os.Getenv("TYPESAFE_API_KEY")) != "" || strings.TrimSpace(os.Getenv("TYPE_SAFE_AI_KEY")) != "" || strings.TrimSpace(os.Getenv("TYPESAFE_AI_API_KEY")) != "" {
+		return SystemOneURL
+	}
 	return OpenRouterURL
 }
 
@@ -41,12 +44,12 @@ func Endpoint() string {
 // OpenRouter endpoint; the TypeSafe names still work for anyone pointing
 // JEV_BASE_URL at TypeSafe directly.
 func Key() (string, error) {
-	for _, name := range []string{"OPENROUTER_API_KEY", "JEV_TOKEN", "TYPE_SAFE_AI_KEY", "TYPESAFE_API_KEY", "TYPESAFE_AI_API_KEY"} {
+	for _, name := range []string{"TYPESAFE_API_KEY", "TYPE_SAFE_AI_KEY", "TYPESAFE_AI_API_KEY", "OPENROUTER_API_KEY", "JEV_TOKEN"} {
 		if v := strings.TrimSpace(os.Getenv(name)); v != "" {
 			return v, nil
 		}
 	}
-	return "", fmt.Errorf("no API key: set OPENROUTER_API_KEY in your environment")
+	return "", fmt.Errorf("no API key: set TYPESAFE_API_KEY or OPENROUTER_API_KEY in your environment")
 }
 
 type Client struct {
